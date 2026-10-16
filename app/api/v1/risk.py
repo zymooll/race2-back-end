@@ -59,7 +59,9 @@ def records(
     return ok(data)
 
 
-@router.get("/records/backtest/stats", response_model=ApiResponse, summary="真实回测统计（放款结果→现实版召回率/精确率）")
+@router.get(
+    "/records/backtest/stats", response_model=ApiResponse, summary="真实回测统计（放款结果→现实版召回率/精确率）"
+)
 def backtest_stats(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
@@ -167,11 +169,13 @@ def update_outcome(
     record_id: int,
     body: OutcomeUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
     rec = db.get(AssessmentRecord, record_id)
     if not rec:
         raise BizException("评估记录不存在", 404)
+    if user.role != "admin" and rec.user_id != user.id:
+        raise BizException("无权回填该记录", 403)
     rec.outcome = body.outcome
     rec.outcome_note = (body.note or "").strip()[:255] or None
     rec.outcome_at = datetime.now()

@@ -14,6 +14,8 @@
 
 历史记录没有相应结果字段时，顶层字段可能为 `null`；原始 `input` 和 `result` 快照仍完整返回。详情同时带回 `indicatorValues`。
 
+`PUT /api/v1/risk/records/{id}/outcome` 支持登录用户回填本人记录，管理员可维护所有记录（含匿名记录）。结果枚举为 `pending`（待回填）、`normal`（正常还款）、`overdue`（逾期）与 `rejected`（未放款）；备注去除首尾空白后最多保存 255 字符。列表与详情均返回 `outcome`、`outcomeNote`、`outcomeAt`，回填不改写原始评分或结果快照。
+
 ## 管理端看板
 
 `GET /api/v1/admin/dashboard?days=14` 返回最多 90 天的统计，默认 30 天。接口通过 `require_admin` 保护，不属于公开 `/api/v1/dashboard/*` 接口。
