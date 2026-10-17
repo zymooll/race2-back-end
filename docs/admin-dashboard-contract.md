@@ -1,5 +1,7 @@
 # 管理端评估数据与看板契约
 
+核对日期：2026-10-17。以当前后端路由、记录服务及前后端调用为准。
+
 ## 评估记录
 
 `AssessmentRecord.result_json` 保存评估引擎返回的完整结果快照。评估记录分页和详情响应均保留 `result`；另将管理端常用字段提升为顶层，便于列表和详情直接消费：
@@ -16,9 +18,15 @@
 
 `PUT /api/v1/risk/records/{id}/outcome` 支持登录用户回填本人记录，管理员可维护所有记录（含匿名记录）。结果枚举为 `pending`（待回填）、`normal`（正常还款）、`overdue`（逾期）与 `rejected`（未放款）；备注去除首尾空白后最多保存 255 字符。列表与详情均返回 `outcome`、`outcomeNote`、`outcomeAt`，回填不改写原始评分或结果快照。
 
+普通记录分页、详情及删除接口均使用当前账号的 `user_id` 限制归属，管理员也遵守这三类接口的归属限制；回填接口另有管理员跨账号权限。用户前端「历史评估记录」和管理端「评估记录」均提供回填入口，保存后更新列表状态。
+
+回填请求体示例：`{"outcome":"normal","note":"按期还款"}`。成功返回统一响应信封中的记录对象；业务错误 `403 / 404 / 422` 等仍通过响应体 `code` 表达。`pending` 和 `rejected` 不参与正常/逾期概率校准。
+
+`GET /api/v1/risk/records/backtest/stats` 和 `GET /api/v1/risk/records/data-layer-stats` 仅管理员可访问，分别提供回填交叉统计及历史 `overrides` 中的数据层触发统计。前者统计所有非 `pending` 结果，包括 `rejected`，应按返回口径解读，不能当成已放款客群的完整真实违约率。
+
 ## 管理端看板
 
-`GET /api/v1/admin/dashboard?days=14` 返回最多 90 天的统计，默认 30 天。接口通过 `require_admin` 保护，不属于公开 `/api/v1/dashboard/*` 接口。
+`GET /api/v1/admin/dashboard?days=14` 返回最多 90 天的统计，默认 30 天。接口通过 `require_admin` 保护，不属于公开 `/api/v1/dashboard/*` 接口。管理端系统概览同时请求 `/admin/stats` 等接口；出现业务 `code=404` 时，应先核对 API 前缀和当前运行后端是否包含此路由。源码更新后，Docker 后端需重新构建运行镜像才会加载新接口。
 
 评估总数、平均分、风险等级分布、平均完整度、一票否决次数、规则触发次数和每日评估趋势均依据窗口内的 `AssessmentRecord`。规则触发次数是所有 `result_json.overrides` 列表元素的总数；否决次数是有非空 `result_json.veto` 的记录数。缺少完整度数据的历史记录不参与完整度平均值。
 

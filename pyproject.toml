@@ -1,4 +1,6 @@
 [tool.ruff]
+# 显式使用后端项目目录下的缓存，避免工作区根目录残留自动生成内容。
+cache-dir = ".ruff_cache"
 line-length = 120
 target-version = "py313"
 src = ["app", "scripts", "tests"]

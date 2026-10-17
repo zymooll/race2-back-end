@@ -1,24 +1,29 @@
-# Web 框架
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-python-multipart>=0.0.9
+# 运行依赖：Python 3.13+；在 back-end 目录执行 python -m pip install -r requirements.txt
+# FastAPI 固定在已验证的次版本内；Starlette 兼容版本交由 FastAPI 的依赖约束选择。
+# 当前接口使用 JSON，无表单/文件上传，因此无需 python-multipart。
+
+# Web 框架与 ASGI 服务
+fastapi>=0.143.2,<0.144.0
+uvicorn[standard]>=0.30.0,<1.0.0
 
 # 数据访问
-SQLAlchemy>=2.0.30
-PyMySQL>=1.1.0
-pydantic>=2.8.0
-pydantic-settings>=2.4.0
+SQLAlchemy>=2.0.30,<3.0.0
+PyMySQL[rsa]>=1.1.0,<2.0.0
+pydantic>=2.9.0,<3.0.0
+pydantic-settings>=2.4.0,<3.0.0
 
 # 认证
-python-jose[cryptography]>=3.3.0
-bcrypt>=4.0.1
+python-jose[cryptography]>=3.5.0,<4.0.0
+bcrypt>=4.0.1,<6.0.0
 
 # 数据处理与建模（信用评分卡：IV筛选 + WOE编码 + Logistic回归）
-numpy>=2.1.0
-pandas>=2.2.0
-scikit-learn>=1.5.0
-statsmodels>=0.14.4
-imbalanced-learn>=0.12.0
+numpy>=2.1.0,<3.0.0
+pandas>=2.2.3,<4.0.0
+scipy>=1.14.1,<2.0.0
+# 评分卡与 SMOTE 使用已验证的 sklearn / imbalanced-learn 版本组合。
+scikit-learn>=1.9.1,<1.10.0
+statsmodels>=0.14.4,<0.16.0
+imbalanced-learn>=0.14.2,<0.15.0
 
 # 系统监控（服务器状态）
-psutil>=6.0.0
+psutil>=6.0.0,<8.0.0
