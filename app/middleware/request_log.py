@@ -1,5 +1,6 @@
 """API 请求日志中间件：记录 /api/* 请求到 ApiLog 表（管理平台 API 管理数据源）"""
 
+import asyncio
 import gzip
 import re
 import time
@@ -54,13 +55,43 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
                 req_body = _mask_sensitive(raw.decode("utf-8", errors="replace")[:_BODY_LIMIT])
             except Exception:  # noqa: BLE001
                 pass
-        response = await call_next(request)
-        duration_ms = round((time.perf_counter() - start) * 1000, 2)
-
         # 仅记录业务 API
         if not path.startswith("/api/"):
+            return await call_next(request)
+
+        # SSE 响应必须保持真正的流式传输。BaseHTTPMiddleware 已将响应体
+        # 暴露为迭代器；包装它只在消费结束或取消时记录一次元数据。
+        # 事件内容可能包含用户数据，因此不为 SSE 读取或记录响应预览。
+        response = await call_next(request)
+        if "text/event-stream" in response.headers.get("content-type", "").lower():
+            body_iterator = response.body_iterator
+
+            async def logged_stream():
+                try:
+                    async for chunk in body_iterator:
+                        yield chunk
+                finally:
+                    write_task = asyncio.create_task(
+                        asyncio.to_thread(
+                            self._write_log,
+                            request,
+                            path,
+                            response.status_code,
+                            start,
+                            req_body,
+                            None,
+                        )
+                    )
+                    try:
+                        await asyncio.shield(write_task)
+                    except asyncio.CancelledError:
+                        await asyncio.shield(write_task)
+                        raise
+
+            response.body_iterator = logged_stream()
             return response
 
+        duration_ms = round((time.perf_counter() - start) * 1000, 2)
         try:
             # 响应预览（JSONResponse 可读 body；脱敏 token；gzip 压缩响应先解压）
             resp_preview = None
@@ -71,39 +102,52 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             except Exception:
                 pass
 
-            # 识别用户
+            await asyncio.to_thread(
+                self._write_log,
+                request,
+                path,
+                response.status_code,
+                start,
+                req_body,
+                resp_preview,
+                duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
+    @staticmethod
+    def _write_log(request, path, status_code, start, req_body, resp_preview, duration_ms=None):
+        """Persist log metadata off the event loop; failures never affect a response."""
+        try:
             username = None
             auth = request.headers.get("authorization", "")
             if auth.startswith("Bearer "):
                 payload = decode_token(auth[7:])
                 if payload:
                     username = payload.get("sub")
-
             client_ip = request.client.host if request.client else None
-
             log = ApiLog(
                 method=request.method,
                 path=path,
-                status_code=response.status_code,
-                duration_ms=duration_ms,
+                status_code=status_code,
+                duration_ms=(
+                    duration_ms if duration_ms is not None else round((time.perf_counter() - start) * 1000, 2)
+                ),
                 client_ip=client_ip,
                 username=username,
                 req_body=req_body,
                 resp_preview=resp_preview,
             )
+            db = SessionLocal()
             try:
-                db = SessionLocal()
-                try:
-                    db.add(log)
-                    db.commit()
-                finally:
-                    db.close()
-            except Exception:
-                pass
+                db.add(log)
+                db.commit()
+            finally:
+                db.close()
         except Exception:
             pass
-
-        return response
 
 
 def _iterate_bytes(bodies):

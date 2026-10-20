@@ -2,8 +2,9 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 项目根目录（config.py 位于 app/core/，上溯 3 级）
@@ -66,6 +67,25 @@ class Settings(BaseSettings):
 
     # ---------- API 日志 ----------
     API_LOG_RETENTION_DAYS: int = 30
+
+    # ---------- AI 复核（默认关闭；密钥仅由服务端环境注入）----------
+    AI_REVIEW_ENABLED: bool = False
+    AI_REVIEW_NAMESPACE: str = Field(default="local", min_length=1, max_length=64)
+    OPENAI_API_KEY: SecretStr = SecretStr("")
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    OPENAI_MODEL: str = ""
+    OPENAI_REASONING_EFFORT: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] | None = None
+    AI_REVIEW_CONCURRENCY: int = Field(default=2, ge=1, le=16)
+    AI_REVIEW_IDLE_TIMEOUT: float = Field(default=30, gt=0)
+    AI_REVIEW_TOTAL_TIMEOUT: float = Field(default=90, gt=0)
+    AI_REVIEW_LEASE_SECONDS: int = Field(default=120, ge=30)
+    AI_REVIEW_RETRY_COOLDOWN: int = Field(default=60, ge=1)
+    AI_REVIEW_MAX_OUTPUT_TOKENS: int = Field(default=2048, ge=256, le=16384)
+
+    @field_validator("OPENAI_REASONING_EFFORT", mode="before")
+    @classmethod
+    def _empty_reasoning_effort(cls, value):
+        return None if value in ("", None) else value
 
     # ---------- 行为验证码（go-captcha-service 独立服务）----------
     # 本地开发默认 http://127.0.0.1:9090；生产 docker-compose 内置 go-captcha-service 服务

@@ -245,6 +245,54 @@ npm run dev          # http://localhost:5175（已代理 /api → localhost:1800
 
 新增资料与运维工具索引见 [scripts/README.md](scripts/README.md)；14 列旧版的扫描、改造和核验记录仅供历史追溯，不能替代当前区域配置流程。
 
+### AI 复核部署与验证（可选，默认关闭）
+
+AI 复核从评估记录保存的解释快照中挑选最多 3 项重点指标，调用 OpenAI Responses API 的 strict JSON Schema 输出说明和核查建议。它只补充解释，不改写专家引擎分数或风险等级。依赖范围为 `openai>=2.54.0,<3`；已验证 SDK 2.54.0。配置缺少密钥或模型时不会发起上游请求。
+
+先发布代码并准备表，再配置密钥和启用开关：
+
+```bash
+cp .env.example .env
+# 在后端 .env 中设置 OPENAI_API_KEY、OPENAI_MODEL，并在确认后设置 AI_REVIEW_ENABLED=true
+python scripts/migrate_202610_ai_review.py
+docker compose up -d --build backend
+```
+
+迁移脚本只创建 `ai_review_task` 表，可重复执行；它不会改写或回填历史评估记录。分阶段发布时，先保持 `AI_REVIEW_ENABLED=false` 完成后端部署和迁移，再发布兼容前端，在开发环境配置密钥及模型并验收后才启用生产。密钥始终仅在后端配置。开发 compose 的 namespace 默认为 `dev`，main compose 默认为 `main`；即使共用数据库，也应保持不同标识，避免 worker 消费另一个环境的待办。
+
+只在后端设置 `OPENAI_API_KEY`。`OPENAI_BASE_URL` 默认官方 Responses API 地址；兼容服务需提供 Responses API 支持。`OPENAI_MODEL` 必须是目标服务支持的模型。可调参数包括每进程 worker 数 `AI_REVIEW_CONCURRENCY=2`、空闲与总请求超时 `AI_REVIEW_IDLE_TIMEOUT=30` / `AI_REVIEW_TOTAL_TIMEOUT=90`、输出 token 上限 `AI_REVIEW_MAX_OUTPUT_TOKENS=2048`。worker 随 FastAPI 进程启动和退出；每个进程最多运行配置数量的任务。任务租约默认 120 秒、每 15 秒续租。临时上游错误最多自动尝试两次；终态失败后人工重试受 60 秒冷却约束，其他错误不会自动重试。
+
+DeepSeek 兼容入口已使用一次脱敏真实请求验证 Responses 流式、结构化输出、浏览器预览及刷新复用。配置示例（不含密钥）：
+
+```dotenv
+OPENAI_BASE_URL=https://api.deepseek.com/v1
+OPENAI_MODEL=deepseek-flash
+OPENAI_REASONING_EFFORT=none
+```
+
+`OPENAI_REASONING_EFFORT` 默认留空，不向上游发送；短说明可按模型能力显式设为 `none` 以减少推理开销。生成参数随任务保存，配置调整不会重写成功说明。测试用密钥不写入仓库；启用仍须在后端注入密钥并设置功能开关。
+
+同一评估记录只有一条持久任务，成功说明会持续从该记录读取，后续请求不会重生成或覆盖。任务按记录 ID 绑定，不能跨记录复用。临时预览单独保存以支持断线恢复，尚未完成校验，不能打印或作为正式结果；SSE 日志不记录预览文本。
+
+需登录并拥有该记录的用户可使用以下接口：
+
+| 方法与路径 | 用途 |
+|---|---|
+| `POST /api/v1/risk/records/{id}/review` | 创建任务或在冷却结束后重试 |
+| `GET /api/v1/risk/records/{id}/review` | 读取当前状态、预览或正式说明 |
+| `GET /api/v1/risk/records/{id}/review/stream` | 订阅 SSE 进展 |
+
+SSE 发送 JSON 状态快照事件 `snapshot`，随后在内容变化时发送 `preview`、任务切换或预览清除时发送 `reset`，终态发送 `completed` 或 `failed`；连接空闲时可能收到 `: heartbeat` 注释。状态包含 `recordId`、`status`、`attemptId`、`version`、`preview`、`items` 和错误信息字段。预览仅供界面临时展示；正式结果以状态接口的 `ready` 响应为准。
+
+本地验证顺序：保持默认关闭启动后端并确认配置状态为 disabled；设置后端密钥、模型并启用后，使用带登录令牌的评估记录调用 POST、GET 和 SSE 接口。只有这类本地流程通过时才表示环境接线正常，不代表外部模型请求已被正式验收。生产还需经实际网关验证流式转发：
+
+```bash
+curl -N -H "Authorization: Bearer $TOKEN" \
+  "https://<后端域名>/api/v1/risk/records/<记录ID>/review/stream"
+```
+
+观察 `snapshot` 或 `preview` 是否在任务完成前逐条到达；若网关缓冲响应，需关闭该路由的代理缓冲和压缩，并再次验证。
+
 ---
 
 ## 测试
@@ -260,6 +308,8 @@ python -m pytest tests -q
 覆盖：认证与验证码、动态评估、区域元数据、风险提示与数据解释、模型训练、监控和管理接口。测试使用独立的 `race_test` 数据库（`127.0.0.1:3307`），每次运行会重建该测试库；业务库 `race` 不参与测试初始化。
 
 测试自行配置数据库连接、临时模型/样本目录并关闭验证码，不依赖业务 `.env` 中的连接地址。最近一次依赖验证（2026-10-16）：Windows / Python 3.14.7 开发环境 59 项测试通过，保留 3 条 Logistic 收敛警告；Linux / Python 3.13.16 生产依赖独立安装及评分卡烟雾检查通过。
+
+AI 复核的专项测试与验收产物保留在本地，不随代码提交；不要直接收集 `scripts/` 下的线上探测脚本。
 
 ---
 

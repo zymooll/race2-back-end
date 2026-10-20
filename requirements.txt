@@ -27,3 +27,7 @@ imbalanced-learn>=0.14.2,<0.15.0
 
 # 系统监控（服务器状态）
 psutil>=6.0.0,<8.0.0
+
+# AI 复核：OpenAI Responses（同时支持兼容入口）
+openai>=2.54.0,<3
+jiter>=0.10,<1

@@ -420,7 +420,7 @@ def _deduct_reason(score: float) -> str:
         return "该项指标表现较差"
     if score < 60:
         return "该项指标有待改善"
-    return "该项指标存在短板"
+    return "建议结合原始数据与采集时点复核该项评分。"
 
 
 def _amount_and_rate(score: int, indicators: dict, configs: dict) -> tuple[float, float]:

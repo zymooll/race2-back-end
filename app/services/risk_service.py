@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.ml.expert_engine import expert_assess
 from app.models.assessment import AssessmentRecord
 from app.models.indicator import IndicatorValue
+from app.services import ai_review_service
 from app.services.transparency_service import enrich_result
 
 
@@ -150,5 +151,6 @@ def assess_dynamic_and_store(
     for code, value in indicators.items():
         db.add(IndicatorValue(assessment_id=rec.id, indicator_code=code, value=str(value)))
 
+    ai_review_service.enqueue(db, rec)
     db.commit()
-    return result
+    return {**result, "recordId": rec.id, "aiReview": ai_review_service.snapshot(db, rec)}

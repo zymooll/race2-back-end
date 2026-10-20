@@ -51,3 +51,17 @@ data/cleaned/*
 # ===== Windows 系统文件 =====
 ehthumbs.db
 Desktop.ini
+
+# 本地测试与验收产物（已有受版本控制的测试保留）
+/tests/
+/scripts/test_*.py
+/outputs/
+/tmp/
+/coverage/
+/test-results/
+/playwright-report/
+.coverage*
+.env.local
+.env.*.local
+.env.test
+.env.acceptance

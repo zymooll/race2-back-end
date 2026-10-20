@@ -11,6 +11,7 @@ on:
       - 'admin-web/**'
       - 'Dockerfile'
       - 'docker-compose.yml'
+      - 'docker-compose.dev.yml'
       - 'requirements*.txt'
       - '.github/workflows/deploy.yml'
   # 支持在 GitHub Actions 页面手动选择分支触发部署

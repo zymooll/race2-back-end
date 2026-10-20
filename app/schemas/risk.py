@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.ai_review import AIReview
+
 # 经营类型大类编码：01~10 或 MIXED（混合经营）
 _BUSINESS_TYPE_RE = re.compile(r"^(0[1-9]|10|MIXED)$")
 # 指标/类型编码：字母数字下划线，最长 32
@@ -153,3 +155,5 @@ class RiskResult(BaseModel):
     riskAlerts: list[RiskAlert] = Field(default_factory=list)
     transparency: DataTransparency | None = None  # 老记录可能没有解释快照
     engineUsage: EngineUsage | None = None  # 老记录不推断执行次数
+    recordId: int | None = None
+    aiReview: AIReview | None = None

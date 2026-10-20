@@ -3,10 +3,12 @@
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import BizException
+from app.models.ai_review import AIReviewTask
 from app.models.assessment import AssessmentRecord
 from app.models.indicator import IndicatorConfig, IndicatorValue
 from app.schemas.common import PageData
 from app.schemas.record import AssessmentRecordOut, IndicatorValueOut
+from app.services import ai_review_service
 
 
 def _indicator_values(db: Session, record_id: int) -> list[IndicatorValueOut]:
@@ -74,13 +76,19 @@ def get_record(db: Session, record_id: int, user_id: int | None = None) -> Asses
         raise BizException("记录不存在", 404)
     _check_owner(r, user_id)
     values = _indicator_values(db, record_id)
-    return AssessmentRecordOut.from_model(r, indicator_values=values or None)
+    detail = AssessmentRecordOut.from_model(r, indicator_values=values or None)
+    if r.result_json:
+        detail.result = {**detail.result, "recordId": r.id, "aiReview": ai_review_service.snapshot(db, r)}
+    else:
+        detail.result = None
+    return detail
 
 
 def delete_record(db: Session, record_id: int, user_id: int | None = None) -> None:
-    r = db.query(AssessmentRecord).filter(AssessmentRecord.id == record_id).first()
+    r = db.query(AssessmentRecord).filter(AssessmentRecord.id == record_id).with_for_update().first()
     if not r:
         raise BizException("记录不存在", 404)
     _check_owner(r, user_id)
+    db.query(AIReviewTask).filter(AIReviewTask.record_id == record_id).delete(synchronize_session=False)
     db.delete(r)
     db.commit()

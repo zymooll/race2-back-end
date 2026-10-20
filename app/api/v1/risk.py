@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -13,10 +14,11 @@ from app.core.response import ApiResponse, ok
 from app.db.session import get_db
 from app.models.assessment import AssessmentRecord
 from app.models.user import User
+from app.schemas.ai_review import AIReview
 from app.schemas.common import PageData
 from app.schemas.record import AssessmentRecordOut
 from app.schemas.risk import DynamicRiskInput, RiskResult
-from app.services import record_service, risk_service
+from app.services import ai_review_service, record_service, risk_service
 
 router = APIRouter(prefix="/risk", tags=["风险评估"])
 
@@ -148,6 +150,42 @@ def record_detail(
     user: User = Depends(get_current_user),
 ):
     return ok(record_service.get_record(db, record_id, user_id=user.id))
+
+
+@router.post("/records/{record_id}/review", response_model=ApiResponse[AIReview], summary="生成或重试 AI 复核说明")
+def request_review(
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return ok(ai_review_service.request_review(db, record_id, user.id))
+
+
+@router.get("/records/{record_id}/review", response_model=ApiResponse[AIReview], summary="AI 复核状态与正式说明")
+def review_status(
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    record = ai_review_service.owned_record(db, record_id, user.id)
+    return ok(ai_review_service.snapshot(db, record))
+
+
+@router.get("/records/{record_id}/review/stream", summary="订阅 AI 复核进展（SSE）")
+def review_stream(
+    record_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    user_id = user.id
+    ai_review_service.owned_record(db, record_id, user_id)
+    # 流式生成器有自己的短会话；不能让请求依赖把连接持有到 SSE 结束。
+    db.close()
+    return StreamingResponse(
+        ai_review_service.review_events(record_id, user_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.delete("/records/{record_id}", response_model=ApiResponse, summary="删除记录")

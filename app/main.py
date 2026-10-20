@@ -21,6 +21,17 @@ from app.db.init_db import full_init
 from app.db.session import SessionLocal
 from app.middleware.request_log import RequestLogMiddleware
 from app.ml.training import load_active_model, run_training
+from app.services.ai_review_worker import running_review_workers
+
+
+class ReviewGZipMiddleware(GZipMiddleware):
+    """显式绕过复核 SSE，不依赖部署的 Starlette 版本是否默认排除事件流。"""
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope.get("path", "").endswith("/review/stream"):
+            await self.app(scope, receive, send)
+            return
+        await super().__call__(scope, receive, send)
 
 
 @asynccontextmanager
@@ -48,7 +59,8 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
 
-    yield
+    async with running_review_workers():
+        yield
     print("[shutdown] 服务关闭")
 
 
@@ -72,7 +84,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     # ---------- gzip 压缩（指标树等大响应 1.7MB → ~300KB，大幅降低 CDN/隧道传输耗时）----------
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(ReviewGZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestLogMiddleware)
 
     # ---------- 安全响应头（防点击劫持 / MIME 嗅探 / XSS 基础防护）----------

@@ -211,7 +211,7 @@ def run_fused_training(
     # （如 BASIC_003 经营年限 IV=0.51），是有业务价值的特征，不应被"淹没"。
     feats = _source_iv_keep(df, feats, target="default")
 
-    version = version or f"v{datetime.now():%Y%m%d%H%M%S}"
+    version = version or f"v{datetime.now():%Y%m%d%H%M%S%f}"
     scorecard = Scorecard(
         version=version,
         use_smote=settings.SMOTE_ENABLED if use_smote is None else use_smote,
@@ -287,7 +287,7 @@ def run_training(
     """执行一次完整训练，返回结果摘要"""
     df = load_or_generate_samples(n_samples)
 
-    version = version or f"v{datetime.now():%Y%m%d%H%M%S}"
+    version = version or f"v{datetime.now():%Y%m%d%H%M%S%f}"
     scorecard = Scorecard(
         version=version,
         use_smote=settings.SMOTE_ENABLED if use_smote is None else use_smote,
